@@ -39,7 +39,7 @@ let () =
   in
   let cmd_action () = print_endline "record" in
   let cmd = {
-    Arg.cmd_name = "record";
+    Arg.cmd_name = [ "record" ];
     cmd_args;
     cmd_action;
     cmd_man;

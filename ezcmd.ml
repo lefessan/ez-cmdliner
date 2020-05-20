@@ -42,7 +42,7 @@ module Types = struct
   type arg_list = (string list * spec * info) list
 
   type command = {
-      cmd_name : string;
+      cmd_name : string list;
       cmd_action : (unit -> unit);
       cmd_args : arg_list;
       cmd_man : Cmdliner.Manpage.block list;
@@ -149,13 +149,17 @@ let rec term_of_list list =
 
 let cmd_exits = Term.default_exits
 
-let create_sub ?version sub =
+let create_sub ?name ?version sub =
   let man = sub.cmd_man in
   let exits = cmd_exits in
   let doc = sub.cmd_doc in
   Term.(const sub.cmd_action $ term_of_list sub.cmd_args),
-  Term.info sub.cmd_name ?version ~doc
-            ~sdocs:Manpage.s_common_options ~exits ~man
+  Term.info (String.concat " " (
+      match name with
+      | None -> sub.cmd_name
+      | Some name -> name :: sub.cmd_name))
+    ?version ~doc
+    ~sdocs:Manpage.s_common_options ~exits ~man
 
 let help more_topics man_format cmds topic = match topic with
   | None -> `Help (`Pager, None) (* help about the program. *)
@@ -197,29 +201,80 @@ let default_cmd ~name ?version ~doc ~man =
   Term.(ret (const (`Help (`Pager, None)))),
   Term.info name ?version ~doc ~sdocs ~exits ~man
 
+type tree =
+    Branch of ( string * tree ) list * command option
+
+let rec add (Branch (list, leaf) ) path cmd =
+  match path, leaf with
+  | [], Some _ ->
+    Printf.kprintf failwith
+      "Cannot override subcommand %S" (String.concat " " cmd.cmd_name)
+  | [], None ->
+    Branch (list, Some cmd)
+  | x :: path, _ ->
+    match List.assoc x list with
+    | exception Not_found ->
+      Branch ( (x, add (Branch ([],None)) path cmd) :: list, leaf )
+    | tree ->
+      let list = List.remove_assoc x list in
+      Branch ( (x, add tree path cmd) :: list, leaf )
+
 let main_with_subcommands ~name ?version ?default
-                          ~doc ~man ?(topics = []) subs =
-  let cmds = List.map (create_sub ?version) subs in
-  let default_cmd = match default with
-    | None ->
-       default_cmd ~name ?version ~doc ~man
-    | Some cmd -> create_sub ?version cmd
+    ~doc ~man ?(topics = []) subs =
+  let tree =
+    List.fold_left (fun tree cmd ->
+        add tree cmd.cmd_name cmd
+      ) (Branch ([],None) ) subs
   in
-  let cmds =
-    if List.exists (fun cmd -> cmd.cmd_name = "help") subs then
-      cmds
+  let call_leaf argv i leaf =
+    match leaf with
+    | None -> `Error `Parse
+    | Some cmd ->
+      let cmd = create_sub ~name ?version cmd in
+      let argv =
+        ( Array.sub argv 0 i |> Array.to_list |> String.concat " " ) ::
+        ( Array.sub argv i (Array.length argv - i) |> Array.to_list )
+      in
+      let argv = Array.of_list argv in
+      Term.eval ~catch:false ~argv cmd
+  in
+  let rec iter (Branch (list, leaf)) argv i =
+    if i = Array.length argv then
+      call_leaf argv i leaf
     else
-      cmds @ [help_cmd ~name ~man ~topics]
+      let s = argv.(i) in
+      match List.assoc s list with
+      | exception Not_found -> call_leaf argv i leaf
+      | tree -> iter tree argv (i+1)
   in
-  match Term.eval_choice ~catch:false default_cmd cmds with
+  match iter tree Sys.argv 1 with
   | `Ok () -> ()
+  | `Error `Parse ->
+    begin
+      let cmds = List.map (create_sub ?version) subs in
+      let default_cmd = match default with
+        | None ->
+          default_cmd ~name ?version ~doc ~man
+        | Some cmd -> create_sub ~name ?version cmd
+      in
+      let cmds =
+        if List.exists (fun cmd -> cmd.cmd_name = [ "help" ]) subs then
+          cmds
+        else
+          cmds @ [help_cmd ~name ~man ~topics]
+      in
+      match Term.eval_choice ~catch:false default_cmd cmds with
+      | `Ok () -> ()
+      | t -> Term.exit t
+    end
   | t -> Term.exit t
 
 let main ?version cmd =
-  let cmd = create_sub ?version cmd in
+  let name = Filename.basename Sys.executable_name in
+  let cmd = create_sub ~name ?version cmd in
   match Term.eval ~catch:false cmd with
   | `Ok () -> ()
-  | `Error `Parse -> print_endline "toto"
+  | `Error `Parse -> print_endline "Could not parse command line"
   | t -> Term.exit t
 
 module Modules = struct
@@ -259,8 +314,8 @@ module Modules = struct
       let cmd_args = translate arg_list @
                        translate_anon  arg_anon in
       let cmd_name = match name with
-          None -> "COMMAND"
-        | Some cmd_name -> cmd_name in
+          None -> [ "COMMAND" ]
+        | Some cmd_name -> [ cmd_name ] in
       let cmd = {
           cmd_name;
           cmd_doc = arg_usage;

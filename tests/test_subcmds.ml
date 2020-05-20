@@ -33,9 +33,9 @@ let help_secs = [
  `S Manpage.s_common_options;
  `P "These options are common to all commands.";
  `S "MORE HELP";
- `P "Use `$(mname) $(i,COMMAND) --help' for help on a single command.";`Noblank;
- `P "Use `$(mname) help patterns' for help on patch matching."; `Noblank;
- `P "Use `$(mname) help environment' for help on environment variables.";
+ `P "Use `cop $(i,COMMAND) --help' for help on a single command.";`Noblank;
+ `P "Use `cop help patterns' for help on patch matching."; `Noblank;
+ `P "Use `cop help environment' for help on environment variables.";
  `S Manpage.s_bugs; `P "Check bug reports at http://bugs.example.org.";]
 
 let initialize_cmd =
@@ -59,7 +59,7 @@ let initialize_cmd =
     `Blocks help_secs; ]
   in
   {
-      Arg.cmd_name = "init";
+      Arg.cmd_name = [ "init" ];
       cmd_args;
       cmd_action;
       cmd_doc = "make the current directory a repository";
@@ -91,7 +91,10 @@ let record_cmd =
       Ezcmd.info "Ask for extra dependencies.";
 
       [],
-      Arg.Anons (fun _files -> assert false),
+      Arg.Anons (fun files ->
+          Printf.eprintf "Anon args: %S\n%!"
+            (String.concat ", " files);
+        ),
       Ezcmd.info ~docv:"FILE or DIR" "Print info on $(docv)"
 
     ]
@@ -103,9 +106,53 @@ let record_cmd =
          a set of files ...";
      `Blocks help_secs; ]
   in
-  let cmd_action () = print_endline "record" in
+  let cmd_action () = print_endline "record action" in
   {
-    Arg.cmd_name = "record";
+    Arg.cmd_name = [ "record" ; "action" ];
+    cmd_args;
+    cmd_action;
+    cmd_man;
+    cmd_doc;
+  }
+
+let record_graph =
+  let cmd_args = [
+
+      ["m"; "patch-name"],
+      Arg.String (fun _s -> assert false),
+      Ezcmd.info ~docv:"NAME" "Name of the patch.";
+
+      ["A"; "author"],
+      Arg.String (fun _s -> assert false),
+      Ezcmd.info ~docv:"EMAIL" "Specifies the author's identity.";
+
+      ["a"; "all"],
+      Arg.Bool (fun _bool -> assert false),
+      Ezcmd.info "Answer yes to all patches.";
+
+      ["ask-deps"],
+      Arg.Bool (fun _bool -> assert false),
+      Ezcmd.info "Ask for extra dependencies.";
+
+      [],
+      Arg.Anons (fun files ->
+          Printf.eprintf "Anon args: %S\n%!"
+            (String.concat ", " files);
+        ),
+      Ezcmd.info ~docv:"FILE or DIR" "Print info on $(docv)"
+
+    ]
+  in
+  let cmd_doc = "create a patch from unrecorded changes" in
+  let cmd_man =
+    [`S Manpage.s_description;
+     `P "Creates a patch from changes in the working tree. If you specify\
+         a set of files ...";
+     `Blocks help_secs; ]
+  in
+  let cmd_action () = print_endline "record graph" in
+  {
+    Arg.cmd_name = [ "record" ; "graph" ];
     cmd_args;
     cmd_action;
     cmd_man;
@@ -125,4 +172,4 @@ let () =
     ~version
     ~doc
     ~man
-    [initialize_cmd; record_cmd]
+    [initialize_cmd; record_cmd; record_graph]

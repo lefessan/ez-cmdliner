@@ -66,7 +66,7 @@ module Modules : sig
     type arg_list = (string list * spec * info) list
 
     type command = {
-        cmd_name : string;
+        cmd_name : string list;
         cmd_action : (unit -> unit);
         cmd_args : arg_list;
         cmd_man : block list;
